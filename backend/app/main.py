@@ -41,6 +41,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+@app.head("/")
+async def root():
+    return {"status": "online", "name": "DSC AI Backend", "version": "1.0.0"}
+
 @app.get("/api/health", response_model=HealthResponse)
 async def get_health():
     provider_status = await llm_service.check_provider_status()
