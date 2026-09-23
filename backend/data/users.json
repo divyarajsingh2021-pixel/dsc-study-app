@@ -1,0 +1,52 @@
+{
+  "admin": {
+    "id": "usr_admin",
+    "username": "admin",
+    "password_hash": "09c878aa745b4a49e2359f97eb65d5dfe0c4e9d20eb86b015d9ebf790212ac7b",
+    "name": "Administrator",
+    "role": "Admin",
+    "email": "admin@studyassistant.ai",
+    "recovery_code": "ADMIN2026",
+    "created_at": "Sep 15, 2026"
+  },
+  "student1": {
+    "id": "usr_student1",
+    "username": "student1",
+    "password_hash": "4265a3f7973d2cb85b204e895949ddd05cd9162eb18e9aad81eee2d22f1ceea7",
+    "name": "Alex Turner",
+    "role": "Student",
+    "email": "alex@studyassistant.ai",
+    "recovery_code": "STUDENT1",
+    "created_at": "Sep 15, 2026"
+  },
+  "student2": {
+    "id": "usr_student2",
+    "username": "student2",
+    "password_hash": "4265a3f7973d2cb85b204e895949ddd05cd9162eb18e9aad81eee2d22f1ceea7",
+    "name": "Maya Patel",
+    "role": "Student",
+    "email": "maya@studyassistant.ai",
+    "recovery_code": "STUDENT2",
+    "created_at": "Sep 15, 2026"
+  },
+  "student3": {
+    "id": "usr_student3",
+    "username": "student3",
+    "password_hash": "4265a3f7973d2cb85b204e895949ddd05cd9162eb18e9aad81eee2d22f1ceea7",
+    "name": "Liam Johnson",
+    "role": "Student",
+    "email": "liam@studyassistant.ai",
+    "recovery_code": "STUDENT3",
+    "created_at": "Sep 15, 2026"
+  },
+  "teacher1": {
+    "id": "usr_teacher1",
+    "username": "teacher1",
+    "password_hash": "3299f7cb72f701f92bef47489adcacee3cb4b3212545977790f6385ef0ae99c4",
+    "name": "Prof. Sharma",
+    "role": "Faculty",
+    "email": "sharma@studyassistant.ai",
+    "recovery_code": "TEACHER1",
+    "created_at": "Sep 15, 2026"
+  }
+}

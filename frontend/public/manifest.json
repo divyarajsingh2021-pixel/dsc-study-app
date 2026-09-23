@@ -1,0 +1,25 @@
+{
+  "name": "DSC - AI Study & Exam Suite",
+  "short_name": "DSC",
+  "description": "DSC Intelligent Study Suite: Mock Tests, One-Shot Revision, and Grounded RAG Assistant.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    }
+  ]
+}
