@@ -1,5 +1,5 @@
-// StudyMate AI Service Worker for PWA
-const CACHE_NAME = 'studymate-cache-v1';
+// DSC AI Service Worker v2 (Network-First for fresh updates)
+const CACHE_NAME = 'dsc-cache-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -9,11 +9,15 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+        cacheNames.map((name) => {
+          if (name !== CACHE_NAME) {
+            console.log('Clearing old service worker cache:', name);
+            return caches.delete(name);
+          }
+        })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  return self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -21,18 +25,27 @@ self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('/api/')) {
     return;
   }
-  
+
+  // Network First strategy: always try fresh content first
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return (
-        cached ||
-        fetch(event.request).catch(() => {
-          // If offline and requesting document, return cached root
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Fallback to cache only when offline
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
           if (event.request.mode === 'navigate') {
             return caches.match('/');
           }
-        })
-      );
-    })
+        });
+      })
   );
 });
