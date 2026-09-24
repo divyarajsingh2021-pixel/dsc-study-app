@@ -189,6 +189,26 @@ class AuthService:
                 "created_at": u.get("created_at", "2026"),
                 "recovery_code": u.get("recovery_code", "STUDY2026")
             })
-        return output
+    def delete_user(self, username: str) -> bool:
+        users = self._read_users()
+        user_key = username.strip().lower()
+        if user_key == "admin":
+            raise ValueError("The primary admin account cannot be deleted")
+        if user_key not in users:
+            raise ValueError("User not found")
+        del users[user_key]
+        self._write_users(users)
+        return True
+
+    def admin_reset_password(self, target_username: str, new_password: str) -> bool:
+        users = self._read_users()
+        user_key = target_username.strip().lower()
+        if user_key not in users:
+            raise ValueError("User not found")
+        if len(new_password) < 4:
+            raise ValueError("New password must be at least 4 characters long")
+        users[user_key]["password_hash"] = self._hash_password(new_password)
+        self._write_users(users)
+        return True
 
 auth_service = AuthService()

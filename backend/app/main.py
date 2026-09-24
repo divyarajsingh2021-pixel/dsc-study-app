@@ -16,7 +16,7 @@ from app.models.schemas import (
     ChatRequest, ChatResponse,
     SettingsUpdateRequest, HealthResponse,
     LoginRequest, LoginResponse, ChangePasswordRequest,
-    ForgotPasswordRequest, RegisterUserRequest, UserItem
+    ForgotPasswordRequest, RegisterUserRequest, UserItem, AdminResetPasswordRequest
 )
 from app.services.pdf_service import pdf_service
 from app.services.vector_service import vector_service
@@ -273,12 +273,44 @@ async def register_account(req: RegisterUserRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/api/auth/users", response_model=list[UserItem])
-async def list_users():
+@app.get("/api/auth/users")
+async def list_users(requester: str = ""):
     users_data = auth_service.get_all_users()
-    return [UserItem(**u) for u in users_data]
+    is_admin = requester.strip().lower() == "admin"
+    result = []
+    for u in users_data:
+        item = {
+            "id": u["id"],
+            "username": u["username"],
+            "name": u["name"],
+            "role": u["role"],
+            "email": u["email"],
+            "created_at": u.get("created_at", "2026"),
+            "recovery_code": u.get("recovery_code") if is_admin else None
+        }
+        result.append(item)
+    return result
+
+@app.delete("/api/auth/users/{username}")
+async def delete_user(username: str, requester: str = ""):
+    if requester.strip().lower() != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can delete accounts")
+    try:
+        auth_service.delete_user(username)
+        return {"message": f"Account '{username}' deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/auth/admin-reset-password")
+async def admin_reset_password(req: AdminResetPasswordRequest, requester: str = ""):
+    if requester.strip().lower() != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can reset passwords")
+    try:
+        auth_service.admin_reset_password(req.target_username, req.new_password)
+        return {"message": f"Password for '{req.target_username}' has been reset successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-

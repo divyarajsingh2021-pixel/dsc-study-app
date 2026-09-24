@@ -146,3 +146,7 @@ class UserItem(BaseModel):
     created_at: str
     recovery_code: Optional[str] = None
 
+class AdminResetPasswordRequest(BaseModel):
+    target_username: str
+    new_password: str
+

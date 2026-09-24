@@ -194,9 +194,33 @@ export async function registerUser(userData) {
   return res.json();
 }
 
-export async function fetchUsers() {
-  const res = await fetch(`${API_BASE}/auth/users`);
+export async function fetchUsers(requesterUsername = '') {
+  const res = await fetch(`${API_BASE}/auth/users?requester=${encodeURIComponent(requesterUsername)}`);
   if (!res.ok) throw new Error('Failed to fetch user directory');
+  return res.json();
+}
+
+export async function deleteUser(username, requesterUsername) {
+  const res = await fetch(`${API_BASE}/auth/users/${encodeURIComponent(username)}?requester=${encodeURIComponent(requesterUsername)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete account');
+  }
+  return res.json();
+}
+
+export async function adminResetPassword(targetUsername, newPassword, requesterUsername) {
+  const res = await fetch(`${API_BASE}/auth/admin-reset-password?requester=${encodeURIComponent(requesterUsername)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target_username: targetUsername, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to reset password');
+  }
   return res.json();
 }
 

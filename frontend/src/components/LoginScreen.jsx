@@ -199,15 +199,6 @@ export default function LoginScreen({ onLoginSuccess }) {
                 </>
               )}
             </button>
-
-            {/* Static hint text (no autofill, stylish badge) */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
-              <span>Default admin:</span>
-              <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-semibold font-mono">admin</code>
-              <span>/</span>
-              <code className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 font-semibold font-mono">admin123</code>
-            </div>
           </form>
 
         ) : (
