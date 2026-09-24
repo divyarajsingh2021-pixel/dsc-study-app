@@ -17,7 +17,8 @@ class VectorService:
     def __init__(self):
         self._init_storage()
         self._init_chroma()
-        
+        self._migrate_existing_docs()
+
     def _init_storage(self):
         if not DOCS_META_FILE.exists():
             with open(DOCS_META_FILE, "w", encoding="utf-8") as f:
@@ -25,18 +26,40 @@ class VectorService:
         if not STATS_FILE.exists():
             with open(STATS_FILE, "w", encoding="utf-8") as f:
                 json.dump({
-                    "tests_taken": 0,
-                    "total_score_sum": 0,
-                    "total_questions_answered": 0,
-                    "topics_revised": 0
+                    "global": {
+                        "tests_taken": 0,
+                        "total_score_sum": 0,
+                        "total_questions_answered": 0,
+                        "topics_revised": 0
+                    },
+                    "users": {}
                 }, f)
+
+    def _migrate_existing_docs(self):
+        """
+        Ensures existing legacy documents have user_id and username (default to admin)
+        so no existing data is lost or broken.
+        """
+        try:
+            with open(DOCS_META_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            modified = False
+            for doc_id, meta in data.items():
+                if "user_id" not in meta:
+                    meta["user_id"] = "usr_admin"
+                    meta["username"] = "admin"
+                    modified = True
+            if modified:
+                with open(DOCS_META_FILE, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Error migrating docs metadata: {e}")
 
     def _init_chroma(self):
         self.chroma_client = chromadb.PersistentClient(
             path=str(CHROMA_DIR),
             settings=ChromaSettings(anonymized_telemetry=False)
         )
-        # Default fallback embedding function (runs locally via ONNX)
         self.default_ef = embedding_functions.DefaultEmbeddingFunction()
         
         self.collection = self.chroma_client.get_or_create_collection(
@@ -46,9 +69,6 @@ class VectorService:
         )
 
     def _split_into_chunks(self, text: str, chunk_size: int = 800, overlap: int = 150) -> List[str]:
-        """
-        Splits text into overlapping chunks, respecting paragraph and sentence boundaries.
-        """
         paragraphs = text.split("\n\n")
         chunks = []
         current_chunk = ""
@@ -63,11 +83,9 @@ class VectorService:
             else:
                 if current_chunk:
                     chunks.append(current_chunk)
-                    # Keep overlap from the end of current chunk
                     overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
                     current_chunk = f"{overlap_text}\n\n{para}"
                 else:
-                    # Paragraph is longer than chunk_size, split by sentences or hard chunks
                     sentences = re.split(r'(?<=[.!?])\s+', para)
                     sub_chunk = ""
                     for s in sentences:
@@ -78,7 +96,6 @@ class VectorService:
                                 chunks.append(sub_chunk)
                                 sub_chunk = s
                             else:
-                                # Hard cut
                                 chunks.append(s[:chunk_size])
                                 sub_chunk = s[chunk_size:]
                     if sub_chunk:
@@ -90,10 +107,6 @@ class VectorService:
         return [c.strip() for c in chunks if len(c.strip()) > 30]
 
     async def _get_ollama_embeddings(self, texts: List[str]) -> Optional[List[List[float]]]:
-        """
-        Attempts to generate embeddings using Ollama's nomic-embed-text.
-        Returns None if Ollama is not reachable.
-        """
         try:
             embeddings = []
             async with httpx.AsyncClient(timeout=1.5) as client:
@@ -110,10 +123,15 @@ class VectorService:
         except Exception:
             return None
 
-    async def add_document(self, doc_id: str, filename: str, pages_data: List[Dict[str, Any]], meta: Dict[str, Any]) -> int:
-        """
-        Chunks page text, embeds, and stores in ChromaDB.
-        """
+    async def add_document(
+        self,
+        doc_id: str,
+        filename: str,
+        pages_data: List[Dict[str, Any]],
+        meta: Dict[str, Any],
+        user_id: str = "usr_admin",
+        username: str = "admin"
+    ) -> int:
         all_chunks = []
         ids = []
         metadatas = []
@@ -132,23 +150,25 @@ class VectorService:
                     "document_id": doc_id,
                     "filename": filename,
                     "page": page_num,
-                    "chunk_index": chunk_idx
+                    "chunk_index": chunk_idx,
+                    "user_id": user_id,
+                    "username": username
                 })
                 chunk_idx += 1
 
         if not all_chunks:
-            # Empty document fallback
             all_chunks.append(f"Document {filename} contains minimal readable text.")
             ids.append(f"{doc_id}_0")
             metadatas.append({
                 "document_id": doc_id,
                 "filename": filename,
                 "page": 1,
-                "chunk_index": 0
+                "chunk_index": 0,
+                "user_id": user_id,
+                "username": username
             })
             chunk_idx = 1
 
-        # Attempt Ollama nomic-embed-text first
         ollama_embs = await self._get_ollama_embeddings(all_chunks)
         if ollama_embs and len(ollama_embs) == len(all_chunks):
             self.collection.add(
@@ -158,14 +178,12 @@ class VectorService:
                 metadatas=metadatas
             )
         else:
-            # Fall back to Chroma's default local embedding function
             self.collection.add(
                 ids=ids,
                 documents=all_chunks,
                 metadatas=metadatas
             )
 
-        # Update metadata JSON store
         self._save_document_meta(doc_id, {
             "id": doc_id,
             "filename": filename,
@@ -173,7 +191,9 @@ class VectorService:
             "file_size": meta.get("file_size", 0),
             "page_count": meta.get("page_count", 1),
             "chunk_count": chunk_idx,
-            "summary": meta.get("summary", "")
+            "summary": meta.get("summary", ""),
+            "user_id": user_id,
+            "username": username
         })
 
         return chunk_idx
@@ -196,22 +216,35 @@ class VectorService:
         except Exception:
             return []
 
-    def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
+    def get_documents_for_user(self, user_id: str, is_admin: bool = False) -> List[Dict[str, Any]]:
+        all_docs = self.get_all_documents()
+        if is_admin:
+            return all_docs
+        return [d for d in all_docs if d.get("user_id") == user_id]
+
+    def get_document_by_id(self, doc_id: str, user_id: Optional[str] = None, is_admin: bool = False) -> Optional[Dict[str, Any]]:
         try:
             with open(DOCS_META_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return data.get(doc_id)
+            doc = data.get(doc_id)
+            if not doc:
+                return None
+            if is_admin or user_id is None or doc.get("user_id") == user_id:
+                return doc
+            return None
         except Exception:
             return None
 
-    def delete_document(self, doc_id: str) -> bool:
-        # Delete from ChromaDB
+    def delete_document(self, doc_id: str, user_id: Optional[str] = None, is_admin: bool = False) -> bool:
+        doc = self.get_document_by_id(doc_id, user_id=user_id, is_admin=is_admin)
+        if not doc:
+            return False
+
         try:
             self.collection.delete(where={"document_id": doc_id})
         except Exception as e:
             print(f"Error deleting from Chroma: {e}")
 
-        # Delete from meta store
         try:
             with open(DOCS_META_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -223,13 +256,23 @@ class VectorService:
         except Exception:
             return False
 
-    async def query_relevant_chunks(self, query: str, document_id: Optional[str] = None, n_results: int = 5) -> List[Dict[str, Any]]:
-        """
-        Retrieves top n_results most relevant chunks for a query.
-        """
-        where_filter = {"document_id": document_id} if document_id else None
-        
-        # Check if Ollama embeddings are used
+    async def query_relevant_chunks(
+        self,
+        query: str,
+        document_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        is_admin: bool = False,
+        n_results: int = 5
+    ) -> List[Dict[str, Any]]:
+        where_filter = None
+        if document_id:
+            doc = self.get_document_by_id(document_id, user_id=user_id, is_admin=is_admin)
+            if not doc:
+                return []
+            where_filter = {"document_id": document_id}
+        elif user_id and not is_admin:
+            where_filter = {"user_id": user_id}
+
         query_embs = await self._get_ollama_embeddings([query])
         if query_embs:
             results = self.collection.query(
@@ -260,14 +303,16 @@ class VectorService:
                     "filename": meta.get("filename", "Unknown Document"),
                     "page": meta.get("page", 1),
                     "chunk_index": meta.get("chunk_index", 0),
-                    "similarity": similarity
+                    "similarity": similarity,
+                    "user_id": meta.get("user_id", "")
                 })
         return output
 
-    def get_document_full_text(self, doc_id: str) -> str:
-        """
-        Retrieves all chunks for a document to form full content.
-        """
+    def get_document_full_text(self, doc_id: str, user_id: Optional[str] = None, is_admin: bool = False) -> str:
+        doc = self.get_document_by_id(doc_id, user_id=user_id, is_admin=is_admin)
+        if not doc:
+            return ""
+
         try:
             results = self.collection.get(
                 where={"document_id": doc_id},
@@ -276,52 +321,115 @@ class VectorService:
             if not results or not results.get("documents"):
                 return ""
             
-            # Sort by chunk_index
             combined = []
-            for doc, meta in zip(results["documents"], results["metadatas"]):
-                combined.append((meta.get("chunk_index", 0), doc))
+            for doc_chunk, meta in zip(results["documents"], results["metadatas"]):
+                combined.append((meta.get("chunk_index", 0), doc_chunk))
             combined.sort(key=lambda x: x[0])
             return "\n\n".join(item[1] for item in combined)
         except Exception as e:
             print(f"Error fetching full text: {e}")
             return ""
 
-    # Stats management
-    def get_stats(self) -> Dict[str, Any]:
+    def _read_stats_raw(self) -> Dict[str, Any]:
         try:
             with open(STATS_FILE, "r", encoding="utf-8") as f:
-                stats = json.load(f)
-            docs = self.get_all_documents()
-            tests_taken = stats.get("tests_taken", 0)
+                raw = json.load(f)
+            if "users" not in raw:
+                # Migrate legacy flat stats
+                legacy_tests = raw.get("tests_taken", 0)
+                legacy_sum = raw.get("total_score_sum", 0)
+                legacy_ans = raw.get("total_questions_answered", 0)
+                legacy_rev = raw.get("topics_revised", 0)
+                migrated = {
+                    "global": {
+                        "tests_taken": legacy_tests,
+                        "total_score_sum": legacy_sum,
+                        "total_questions_answered": legacy_ans,
+                        "topics_revised": legacy_rev
+                    },
+                    "users": {
+                        "usr_admin": {
+                            "tests_taken": legacy_tests,
+                            "total_score_sum": legacy_sum,
+                            "total_questions_answered": legacy_ans,
+                            "topics_revised": legacy_rev
+                        }
+                    }
+                }
+                with open(STATS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(migrated, f, indent=2)
+                return migrated
+            return raw
+        except Exception:
+            return {"global": {"tests_taken": 0, "total_score_sum": 0, "total_questions_answered": 0, "topics_revised": 0}, "users": {}}
+
+    def get_stats_for_user(self, user_id: Optional[str] = None, is_admin: bool = False) -> Dict[str, Any]:
+        stats = self._read_stats_raw()
+        if is_admin and not user_id:
+            g = stats.get("global", {})
+            tests_taken = g.get("tests_taken", 0)
             avg_score = 0.0
-            if tests_taken > 0 and stats.get("total_questions_answered", 0) > 0:
-                avg_score = round((stats.get("total_score_sum", 0) / stats.get("total_questions_answered", 0)) * 100, 1)
+            if tests_taken > 0 and g.get("total_questions_answered", 0) > 0:
+                avg_score = round((g.get("total_score_sum", 0) / g.get("total_questions_answered", 0)) * 100, 1)
+            docs = self.get_all_documents()
             return {
                 "documents_uploaded": len(docs),
                 "tests_taken": tests_taken,
                 "avg_score": avg_score,
-                "topics_revised": stats.get("topics_revised", 0)
+                "topics_revised": g.get("topics_revised", 0)
             }
-        except Exception:
-            return {"documents_uploaded": 0, "tests_taken": 0, "avg_score": 0.0, "topics_revised": 0}
 
-    def record_test_result(self, score: int, total_questions: int):
+        user_id = user_id or "usr_admin"
+        u_stats = stats.get("users", {}).get(user_id, {
+            "tests_taken": 0,
+            "total_score_sum": 0,
+            "total_questions_answered": 0,
+            "topics_revised": 0
+        })
+        tests_taken = u_stats.get("tests_taken", 0)
+        avg_score = 0.0
+        if tests_taken > 0 and u_stats.get("total_questions_answered", 0) > 0:
+            avg_score = round((u_stats.get("total_score_sum", 0) / u_stats.get("total_questions_answered", 0)) * 100, 1)
+
+        user_docs = self.get_documents_for_user(user_id, is_admin=False)
+        return {
+            "documents_uploaded": len(user_docs),
+            "tests_taken": tests_taken,
+            "avg_score": avg_score,
+            "topics_revised": u_stats.get("topics_revised", 0)
+        }
+
+    def record_test_result(self, score: int, total_questions: int, user_id: str = "usr_admin"):
         try:
-            with open(STATS_FILE, "r", encoding="utf-8") as f:
-                stats = json.load(f)
-            stats["tests_taken"] = stats.get("tests_taken", 0) + 1
-            stats["total_score_sum"] = stats.get("total_score_sum", 0) + score
-            stats["total_questions_answered"] = stats.get("total_questions_answered", 0) + total_questions
+            stats = self._read_stats_raw()
+            # Update global
+            g = stats.setdefault("global", {"tests_taken": 0, "total_score_sum": 0, "total_questions_answered": 0, "topics_revised": 0})
+            g["tests_taken"] = g.get("tests_taken", 0) + 1
+            g["total_score_sum"] = g.get("total_score_sum", 0) + score
+            g["total_questions_answered"] = g.get("total_questions_answered", 0) + total_questions
+
+            # Update per-user
+            users_dict = stats.setdefault("users", {})
+            u = users_dict.setdefault(user_id, {"tests_taken": 0, "total_score_sum": 0, "total_questions_answered": 0, "topics_revised": 0})
+            u["tests_taken"] = u.get("tests_taken", 0) + 1
+            u["total_score_sum"] = u.get("total_score_sum", 0) + score
+            u["total_questions_answered"] = u.get("total_questions_answered", 0) + total_questions
+
             with open(STATS_FILE, "w", encoding="utf-8") as f:
                 json.dump(stats, f, indent=2)
         except Exception as e:
             print(f"Error updating test stats: {e}")
 
-    def increment_topics_revised(self):
+    def increment_topics_revised(self, user_id: str = "usr_admin"):
         try:
-            with open(STATS_FILE, "r", encoding="utf-8") as f:
-                stats = json.load(f)
-            stats["topics_revised"] = stats.get("topics_revised", 0) + 1
+            stats = self._read_stats_raw()
+            g = stats.setdefault("global", {"tests_taken": 0, "total_score_sum": 0, "total_questions_answered": 0, "topics_revised": 0})
+            g["topics_revised"] = g.get("topics_revised", 0) + 1
+
+            users_dict = stats.setdefault("users", {})
+            u = users_dict.setdefault(user_id, {"tests_taken": 0, "total_score_sum": 0, "total_questions_answered": 0, "topics_revised": 0})
+            u["topics_revised"] = u.get("topics_revised", 0) + 1
+
             with open(STATS_FILE, "w", encoding="utf-8") as f:
                 json.dump(stats, f, indent=2)
         except Exception as e:

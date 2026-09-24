@@ -213,7 +213,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                 required
                 value={forgotUsername}
                 onChange={(e) => setForgotUsername(e.target.value)}
-                placeholder="e.g. admin or student1"
+                placeholder="Enter your username"
                 autoComplete="off"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
               />
@@ -228,13 +228,10 @@ export default function LoginScreen({ onLoginSuccess }) {
                 required
                 value={recoveryInput}
                 onChange={(e) => setRecoveryInput(e.target.value)}
-                placeholder="e.g. ADMIN2026"
+                placeholder="Enter registered email or recovery code"
                 autoComplete="off"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
               />
-              <p className="text-[10px] text-slate-400 mt-1">
-                For admin account use code: <strong className="text-slate-600">ADMIN2026</strong>
-              </p>
             </div>
 
             <div>

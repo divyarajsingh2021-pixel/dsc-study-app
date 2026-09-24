@@ -9,6 +9,8 @@ class DocumentInfo(BaseModel):
     page_count: int
     chunk_count: int
     summary: Optional[str] = ""
+    user_id: Optional[str] = None
+    username: Optional[str] = None
 
 class DocumentListResponse(BaseModel):
     documents: List[DocumentInfo]

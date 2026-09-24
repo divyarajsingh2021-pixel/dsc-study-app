@@ -8,18 +8,22 @@ class RAGService:
         self,
         question: str,
         document_id: Optional[str] = None,
-        history: Optional[List[ChatMessage]] = None
+        history: Optional[List[ChatMessage]] = None,
+        user_id: Optional[str] = None,
+        is_admin: bool = False
     ) -> ChatResponse:
-        # Retrieve top relevant chunks from ChromaDB
+        # Retrieve top relevant chunks from ChromaDB for this user
         chunks = await vector_service.query_relevant_chunks(
             query=question,
             document_id=document_id,
+            user_id=user_id,
+            is_admin=is_admin,
             n_results=4
         )
 
         if not chunks:
             return ChatResponse(
-                answer="I couldn't find any relevant study material in your uploaded documents for this question. Please upload notes or select a document with relevant content.",
+                answer="I couldn't find any relevant study material in your uploaded documents for this question. Please upload notes or select a document from your library.",
                 citations=[],
                 provider_used="System"
             )
@@ -71,7 +75,6 @@ Helpful & Grounded Explanation:"""
         system_prompt = "You are a helpful, rigorous AI Study Assistant who explains academic concepts clearly and always grounds answers in the student's uploaded notes."
 
         def offline_fallback() -> str:
-            # Fallback heuristic summary from chunks
             key_sentences = []
             q_words = set(question.lower().split())
             for c in chunks:
@@ -85,7 +88,6 @@ Helpful & Grounded Explanation:"""
                     break
 
             if not key_sentences:
-                # Return the best matching chunk snippet
                 return f"Based on your study material in **{chunks[0]['filename']}** (Page {chunks[0]['page']}):\n\n{chunks[0]['text'][:400]}..."
 
             return f"Based on your uploaded study notes in **{chunks[0]['filename']}** (Page {chunks[0]['page']}):\n\n" + "\n".join(key_sentences)

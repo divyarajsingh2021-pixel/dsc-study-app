@@ -1,20 +1,45 @@
 const API_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : '';
 const API_BASE = `${API_URL}/api`;
 
+function getAuthHeaders() {
+  const headers = {};
+  try {
+    const raw = localStorage.getItem('study_user');
+    if (raw) {
+      const user = JSON.parse(raw);
+      if (user && user.token) {
+        headers['Authorization'] = `Bearer ${user.token}`;
+      }
+      if (user && user.id) {
+        headers['X-User-Id'] = user.id;
+      }
+    }
+  } catch (e) {
+    // Ignore JSON parsing errors
+  }
+  return headers;
+}
+
 export async function fetchHealth() {
-  const res = await fetch(`${API_BASE}/health`);
+  const res = await fetch(`${API_BASE}/health`, {
+    headers: { ...getAuthHeaders() }
+  });
   if (!res.ok) throw new Error('Failed to fetch system health');
   return res.json();
 }
 
 export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/stats`);
+  const res = await fetch(`${API_BASE}/stats`, {
+    headers: { ...getAuthHeaders() }
+  });
   if (!res.ok) throw new Error('Failed to fetch stats');
   return res.json();
 }
 
 export async function fetchDocuments() {
-  const res = await fetch(`${API_BASE}/documents`);
+  const res = await fetch(`${API_BASE}/documents`, {
+    headers: { ...getAuthHeaders() }
+  });
   if (!res.ok) throw new Error('Failed to fetch documents');
   return res.json();
 }
@@ -25,6 +50,7 @@ export async function uploadDocument(file) {
 
   const res = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
+    headers: { ...getAuthHeaders() },
     body: formData,
   });
 
@@ -36,7 +62,9 @@ export async function uploadDocument(file) {
 }
 
 export async function downloadDocument(docId, filename) {
-  const res = await fetch(`${API_BASE}/documents/${docId}/download`);
+  const res = await fetch(`${API_BASE}/documents/${docId}/download`, {
+    headers: { ...getAuthHeaders() }
+  });
   if (!res.ok) throw new Error('Failed to download document');
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
@@ -52,15 +80,22 @@ export async function downloadDocument(docId, filename) {
 export async function deleteDocument(docId) {
   const res = await fetch(`${API_BASE}/documents/${docId}`, {
     method: 'DELETE',
+    headers: { ...getAuthHeaders() }
   });
-  if (!res.ok) throw new Error('Failed to delete document');
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete document');
+  }
   return res.json();
 }
 
 export async function generateQuiz(documentId, topic = '', numQuestions = 5) {
   const res = await fetch(`${API_BASE}/quiz/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify({
       document_id: documentId,
       topic: topic || null,
@@ -77,7 +112,10 @@ export async function generateQuiz(documentId, topic = '', numQuestions = 5) {
 export async function submitQuizResult(quizId, documentId, score, totalQuestions) {
   const res = await fetch(`${API_BASE}/quiz/submit`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify({
       quiz_id: quizId,
       document_id: documentId,
@@ -92,7 +130,10 @@ export async function submitQuizResult(quizId, documentId, score, totalQuestions
 export async function generateRevisionSheet(documentId, topic = '') {
   const res = await fetch(`${API_BASE}/revision/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify({
       document_id: documentId,
       topic: topic || null,
@@ -108,31 +149,42 @@ export async function generateRevisionSheet(documentId, topic = '') {
 export async function sendChatMessage(question, documentId = null, history = []) {
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify({
       question,
       document_id: documentId || null,
-      history,
+      history: history.map((m) => ({ role: m.role, content: m.content })),
     }),
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Failed to send chat message');
+    throw new Error(errorData.detail || 'Failed to process question');
   }
   return res.json();
 }
 
-export async function updateAppSettings(settings) {
+export async function updateSettings(settingsData) {
   const res = await fetch(`${API_BASE}/settings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings),
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
+    body: JSON.stringify(settingsData),
   });
-  if (!res.ok) throw new Error('Failed to update settings');
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to update settings');
+  }
   return res.json();
 }
 
-// ----------------- AUTHENTICATION & ACCOUNT -----------------
+export const updateAppSettings = updateSettings;
+
+// ----------------- AUTH API -----------------
 
 export async function loginUser(username, password) {
   const res = await fetch(`${API_BASE}/auth/login`, {
@@ -150,7 +202,10 @@ export async function loginUser(username, password) {
 export async function changePassword(username, currentPassword, newPassword) {
   const res = await fetch(`${API_BASE}/auth/change-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify({
       username,
       current_password: currentPassword,
@@ -184,7 +239,10 @@ export async function forgotPassword(username, recoveryInput, newPassword) {
 export async function registerUser(userData) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify(userData),
   });
   if (!res.ok) {
@@ -194,15 +252,18 @@ export async function registerUser(userData) {
   return res.json();
 }
 
-export async function fetchUsers(requesterUsername = '') {
-  const res = await fetch(`${API_BASE}/auth/users?requester=${encodeURIComponent(requesterUsername)}`);
+export async function fetchUsers() {
+  const res = await fetch(`${API_BASE}/auth/users`, {
+    headers: { ...getAuthHeaders() }
+  });
   if (!res.ok) throw new Error('Failed to fetch user directory');
   return res.json();
 }
 
-export async function deleteUser(username, requesterUsername) {
-  const res = await fetch(`${API_BASE}/auth/users/${encodeURIComponent(username)}?requester=${encodeURIComponent(requesterUsername)}`, {
+export async function deleteUser(username) {
+  const res = await fetch(`${API_BASE}/auth/users/${encodeURIComponent(username)}`, {
     method: 'DELETE',
+    headers: { ...getAuthHeaders() }
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -211,10 +272,13 @@ export async function deleteUser(username, requesterUsername) {
   return res.json();
 }
 
-export async function adminResetPassword(targetUsername, newPassword, requesterUsername) {
-  const res = await fetch(`${API_BASE}/auth/admin-reset-password?requester=${encodeURIComponent(requesterUsername)}`, {
+export async function adminResetPassword(targetUsername, newPassword) {
+  const res = await fetch(`${API_BASE}/auth/admin-reset-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    },
     body: JSON.stringify({ target_username: targetUsername, new_password: newPassword }),
   });
   if (!res.ok) {
@@ -223,4 +287,3 @@ export async function adminResetPassword(targetUsername, newPassword, requesterU
   }
   return res.json();
 }
-

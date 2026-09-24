@@ -9,13 +9,18 @@ from pathlib import Path
 from app.config import DATA_DIR
 
 USERS_FILE = DATA_DIR / "users.json"
+AUTH_SALT = "study_salt_2026"
 
 class AuthService:
     def __init__(self):
         self._init_users_store()
 
-    def _hash_password(self, password: str, salt: str = "study_salt_2026") -> str:
+    def _hash_password(self, password: str, salt: str = AUTH_SALT) -> str:
         return hashlib.sha256(f"{password}_{salt}".encode("utf-8")).hexdigest()
+
+    def _generate_token(self, user_id: str, username: str) -> str:
+        token_hash = hashlib.sha256(f"{user_id}_{username}_{AUTH_SALT}".encode("utf-8")).hexdigest()[:24]
+        return f"dsc_tok_{user_id}_{token_hash}"
 
     def _init_users_store(self):
         """
@@ -96,7 +101,9 @@ class AuthService:
         if user["password_hash"] != self._hash_password(password):
             return None
 
-        # Return sanitized profile
+        token = self._generate_token(user["id"], user["username"])
+
+        # Return sanitized profile with token
         return {
             "id": user["id"],
             "username": user["username"],
@@ -104,8 +111,43 @@ class AuthService:
             "role": user["role"],
             "email": user["email"],
             "created_at": user.get("created_at", "2026"),
-            "token": f"token_{user['username']}_{uuid.uuid4().hex[:12]}"
+            "token": token
         }
+
+    def get_user_from_token(self, token_str: str) -> Optional[Dict[str, Any]]:
+        if not token_str or not isinstance(token_str, str):
+            return None
+        token = token_str.strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+
+        users = self._read_users()
+        for user in users.values():
+            expected_token = self._generate_token(user["id"], user["username"])
+            if token == expected_token or token == f"token_{user['username']}" or token.startswith(f"token_{user['username']}_"):
+                return {
+                    "id": user["id"],
+                    "username": user["username"],
+                    "name": user["name"],
+                    "role": user["role"],
+                    "email": user["email"],
+                    "created_at": user.get("created_at", "2026")
+                }
+        return None
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        users = self._read_users()
+        for user in users.values():
+            if user.get("id") == user_id:
+                return {
+                    "id": user["id"],
+                    "username": user["username"],
+                    "name": user["name"],
+                    "role": user["role"],
+                    "email": user["email"],
+                    "created_at": user.get("created_at", "2026")
+                }
+        return None
 
     def change_password(self, username: str, current_password: str, new_password: str) -> bool:
         users = self._read_users()
@@ -176,19 +218,23 @@ class AuthService:
             "created_at": new_user["created_at"]
         }
 
-    def get_all_users(self) -> List[Dict[str, Any]]:
+    def get_all_users(self, is_admin: bool = False) -> List[Dict[str, Any]]:
         users = self._read_users()
         output = []
         for u in users.values():
-            output.append({
+            item = {
                 "id": u["id"],
                 "username": u["username"],
                 "name": u["name"],
                 "role": u["role"],
                 "email": u["email"],
                 "created_at": u.get("created_at", "2026"),
-                "recovery_code": u.get("recovery_code", "STUDY2026")
-            })
+            }
+            if is_admin:
+                item["recovery_code"] = u.get("recovery_code", "STUDY2026")
+            output.append(item)
+        return output
+
     def delete_user(self, username: str) -> bool:
         users = self._read_users()
         user_key = username.strip().lower()

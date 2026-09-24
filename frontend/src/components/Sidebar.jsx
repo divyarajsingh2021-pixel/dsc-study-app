@@ -14,12 +14,13 @@ import {
 import DscLogo from './DscLogo';
 
 export default function Sidebar({ currentTab, setTab, healthInfo, currentUser, onLogout }) {
+  const isAdmin = currentUser?.role === 'Admin' || currentUser?.username === 'admin';
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'mock-test', label: 'Generate Mock Test', icon: FileQuestion },
     { id: 'revision', label: 'One-Shot Revision', icon: Zap },
     { id: 'qa-chat', label: 'Q&A Chat (RAG)', icon: MessageSquareText },
-    { id: 'account', label: 'Account & Users', icon: User },
+    { id: 'account', label: isAdmin ? 'Admin & Accounts' : 'My Account', icon: User },
     { id: 'settings', label: 'LLM & Settings', icon: Settings },
   ];
 

@@ -13,22 +13,26 @@ class QuizService:
         self,
         document_id: str,
         topic: Optional[str] = None,
-        num_questions: int = 5
+        num_questions: int = 5,
+        user_id: Optional[str] = None,
+        is_admin: bool = False
     ) -> QuizResponse:
-        doc_meta = vector_service.get_document_by_id(document_id)
-        doc_name = doc_meta["filename"] if doc_meta else "Document"
+        doc_meta = vector_service.get_document_by_id(document_id, user_id=user_id, is_admin=is_admin)
+        if not doc_meta:
+            raise ValueError("Selected document not found or not authorized")
+        doc_name = doc_meta["filename"]
 
-        # Retrieve relevant chunks for the topic or document
         query_text = topic if topic and topic.strip() else "key concepts, definitions, principles and important topics"
         chunks = await vector_service.query_relevant_chunks(
             query=query_text,
             document_id=document_id,
+            user_id=user_id,
+            is_admin=is_admin,
             n_results=min(8, max(4, num_questions * 2))
         )
 
         if not chunks:
-            # Fallback to full document text if vector query had no chunks
-            full_text = vector_service.get_document_full_text(document_id)
+            full_text = vector_service.get_document_full_text(document_id, user_id=user_id, is_admin=is_admin)
             context_text = full_text[:4000] if full_text else f"Study material for {doc_name}"
         else:
             context_text = "\n\n".join([f"[Page {c['page']}]: {c['text']}" for c in chunks])
@@ -60,7 +64,6 @@ Rules:
         system_prompt = "You are a test assessment engine. You strictly output valid JSON containing challenging, well-formulated multiple choice questions."
 
         def offline_quiz_fallback() -> str:
-            # Intelligent heuristic question generator from chunks
             questions_list = []
             sentences = []
             for c in chunks:
@@ -76,7 +79,6 @@ Rules:
             for idx in range(min(num_questions, max(1, len(sentences)))):
                 target_sent, target_chunk = sentences[idx % len(sentences)]
                 words = target_sent.split()
-                # Find a key term to blank out or question
                 key_phrase = words[0] if len(words) > 0 else "Concept"
                 for w in words:
                     if len(w) > 5 and w[0].isupper():
@@ -116,14 +118,12 @@ Rules:
             raw_qs = parsed_data.get("questions", [])
             for i, q in enumerate(raw_qs, 1):
                 options = q.get("options", [])
-                # Ensure 4 options
                 while len(options) < 4:
                     options.append(f"Option {chr(65 + len(options))}")
                 options = options[:4]
                 
                 correct_ans = q.get("correct_answer", 0)
                 if isinstance(correct_ans, str):
-                    # In case LLM returned "A", "B", "C", "D"
                     letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
                     correct_ans = letter_map.get(correct_ans.strip().upper(), 0)
                 elif not isinstance(correct_ans, int) or correct_ans < 0 or correct_ans > 3:
@@ -138,7 +138,6 @@ Rules:
                 ))
         except Exception as e:
             print(f"Error parsing quiz JSON from {provider}: {e}")
-            # Run offline generator
             offline_json = json.loads(offline_quiz_fallback())
             for i, q in enumerate(offline_json.get("questions", []), 1):
                 parsed_questions.append(QuizQuestion(

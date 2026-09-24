@@ -6,7 +6,9 @@
     "file_size": 5749,
     "page_count": 3,
     "chunk_count": 7,
-    "summary": "3 pages parsed"
+    "summary": "3 pages parsed",
+    "user_id": "usr_admin",
+    "username": "admin"
   },
   "a325d88b-7f2": {
     "id": "a325d88b-7f2",
@@ -15,6 +17,8 @@
     "file_size": 1311207,
     "page_count": 60,
     "chunk_count": 61,
-    "summary": "60 pages parsed"
+    "summary": "60 pages parsed",
+    "user_id": "usr_admin",
+    "username": "admin"
   }
 }

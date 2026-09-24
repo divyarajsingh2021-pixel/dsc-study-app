@@ -60,6 +60,15 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setDocuments([]);
+    setStats({
+      documents_uploaded: 0,
+      tests_taken: 0,
+      avg_score: 0.0,
+      topics_revised: 0,
+    });
+    setHealthInfo(null);
+    setPreselectedDocId('');
     try {
       localStorage.removeItem('study_user');
     } catch (e) {}

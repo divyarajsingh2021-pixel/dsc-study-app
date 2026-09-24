@@ -9,23 +9,28 @@ class RevisionService:
     async def generate_revision_sheet(
         self,
         document_id: str,
-        topic: Optional[str] = None
+        topic: Optional[str] = None,
+        user_id: Optional[str] = None,
+        is_admin: bool = False
     ) -> RevisionResponse:
-        doc_meta = vector_service.get_document_by_id(document_id)
-        doc_name = doc_meta["filename"] if doc_meta else "Document"
+        doc_meta = vector_service.get_document_by_id(document_id, user_id=user_id, is_admin=is_admin)
+        if not doc_meta:
+            raise ValueError("Selected document not found or not authorized")
+        doc_name = doc_meta["filename"]
 
-        # Fetch relevant chunks or full text
         query = topic if topic and topic.strip() else "key definitions principles formulas and summary"
         chunks = await vector_service.query_relevant_chunks(
             query=query,
             document_id=document_id,
+            user_id=user_id,
+            is_admin=is_admin,
             n_results=6
         )
 
         if chunks:
             content_text = "\n\n".join([f"Page {c['page']}: {c['text']}" for c in chunks])
         else:
-            content_text = vector_service.get_document_full_text(document_id)[:5000]
+            content_text = vector_service.get_document_full_text(document_id, user_id=user_id, is_admin=is_admin)[:5000]
 
         prompt = f"""You are an elite academic tutor. Create a high-yield, condensed "One-Shot Revision Sheet" from the following study material.
 
@@ -57,7 +62,6 @@ Output ONLY valid JSON matching this exact structure:
         system_prompt = "You are a master study summarizer. You create high-yield exam revision sheets returned strictly as valid JSON."
 
         def offline_revision_fallback() -> str:
-            # Heuristic extractor for definitions and key points
             defs = []
             bullets = []
             qas = []
@@ -134,7 +138,6 @@ Output ONLY valid JSON matching this exact structure:
             for q in example_qas_raw
         ]
 
-        # Generate readable raw markdown for export/copy
         md_lines = [
             f"# One-Shot Revision Sheet: {topic_str}",
             f"**Source Document:** {doc_name}  \n\n",
@@ -152,8 +155,9 @@ Output ONLY valid JSON matching this exact structure:
             md_lines.append(f"### Q{idx}: {qa.question}")
             md_lines.append(f"**Answer:** {qa.answer}\n")
 
-        # Increment revised counter in stats
-        vector_service.increment_topics_revised()
+        # Increment revised counter in user stats
+        target_uid = user_id or "usr_admin"
+        vector_service.increment_topics_revised(user_id=target_uid)
 
         return RevisionResponse(
             document_id=document_id,
